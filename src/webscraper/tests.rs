@@ -15,7 +15,7 @@ async fn get_google_test() {
 async fn parse_article_test(){
     let url = "https://www.ghanaweb.com/GhanaHomePage/NewsArchive/Volta-Regional-Police-seize-ammunition-on-Accra-Benin-bound-bus-1980671";
     let _ = get_webpage(url).await.and_then(|html|{
-        Ok(parse_article(&html).unwrap())
+        Ok(parse_article(&html,url).unwrap())
     }).and_then(|article|{
         println!("article {:?}",article);
         Ok(())

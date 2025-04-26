@@ -1,73 +1,19 @@
 use std::{fs, path::Path, sync::Arc, thread};
-
 use chrono::{Days, NaiveDate};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use jobs::{process_articles, process_links};
 use threadpool::ThreadPool;
 use tokio::main;
-use tokio::runtime::Runtime;
-use webscraper::{get_article, get_list_of_article_links, write_article_to_file, Article};
-mod utils;
+use crossbeam_channel::unbounded;
+use webscraper::Article;
+
 mod webscraper;
+mod utils;
+mod jobs;
+
+
 
 static BASE_URL: &str = "https://www.ghanaweb.com";
-static NTHREADS: [usize; 2] = [8, 2];
-
-fn process_links(
-    article_tp_size: usize,
-    arc_shared_link_chan_rx: &Arc<Receiver<String>>,
-    article_chan_tx: &Sender<Article>,
-    article_tp: &ThreadPool,
-) {
-    for _ in 0..article_tp_size {
-        let link_chan_rx = Arc::clone(arc_shared_link_chan_rx);
-        let shared_article_chan_tx = article_chan_tx.clone();
-
-        article_tp.execute(move || {
-            let thread_id = thread::current().id();
-            let rt = Runtime::new().unwrap();
-            
-            while let Ok(link) = link_chan_rx.recv() {
-                let articles: Vec<Article> = rt
-                    .block_on(get_list_of_article_links(&link))
-                    .unwrap()
-                    .iter()
-                    .map(|a_link| rt.block_on(get_article(a_link)).unwrap())
-                    .collect();
-                for a in articles {
-                    if let Err(err) = shared_article_chan_tx.send(a) {
-                        panic!(
-                            "[{:?}] failed to send article object over the tx channel.",
-                            err
-                        );
-                    }
-                }
-            }
-            drop(shared_article_chan_tx);
-            println!("Exiting article thread. {:?}", thread_id);
-        });
-    }
-}
-
-
-fn process_articles<'a >(article_tp_size:usize,arc_shared_article_chan_rx:&Arc<Receiver<Article>>,output_dir:&str, out_tp :&ThreadPool){
-    for _ in 0..article_tp_size {
-        let shared_article_chan_rx = Arc::clone(arc_shared_article_chan_rx);
-        let output_dir = output_dir.to_owned();
-        out_tp.execute(move || {
-            let thread_id = thread::current().id();
-            while let Ok(article) = shared_article_chan_rx.recv() {
-                println!("[{:?}] writing {} to file.", thread_id, article.title);
-                if let Err(err) = write_article_to_file(&output_dir, &article) {
-                    panic!(
-                        "[{:?}] failed to write article {:?} to file. {}",
-                        thread_id, &article, err
-                    );
-                }
-            }
-            println!("[{:?}] exiting output thread.", thread_id);
-        });
-    }
-}
+static NTHREADS: [usize; 2] = [16, 2];
 
 #[main]
 async fn main() {
@@ -102,11 +48,21 @@ async fn main() {
 
     //start threads
     //link thread --- article_chan_tx ---|> out_chan_rx
-    process_links(article_tp_size, &arc_shared_link_chan_rx,&article_chan_tx, &article_tp);
+    process_links(
+        article_tp_size,
+        &arc_shared_link_chan_rx,
+        &article_chan_tx,
+        &article_tp,
+    );
 
     //out_chan_rx --- > to json file
-    process_articles(article_tp_size, &arc_shared_article_chan_rx, output_dir, &out_tp);
-    
+    process_articles(
+        article_tp_size,
+        &arc_shared_article_chan_rx,
+        output_dir,
+        &out_tp,
+    );
+
     //main thread --- link_chan ---|> article thread
     while cur_date != end_date {
         let new_link = archive_url.replace("$date", &cur_date.format(link_date_fmt).to_string());

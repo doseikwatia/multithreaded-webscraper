@@ -38,9 +38,10 @@ pub struct Article {
     pub date: String,
     pub title: String,
     pub content: String,
+    pub link: String,
 }
 
-pub fn parse_article(html: &str) -> Option<Article> {
+pub fn parse_article(html: &str, link:&str) -> Option<Article> {
     let default_soup = Soup::new("<div></div>").tag("div").find().unwrap();
     let soup = Soup::new(html)
         .tag("div")
@@ -73,10 +74,14 @@ pub fn parse_article(html: &str) -> Option<Article> {
         .unwrap_or(default_soup.clone())
         .text();
 
+    //link
+    let link = link.to_string();
+
     Some(Article {
         date,
         title,
         content,
+        link
     })
 }
 
@@ -131,5 +136,5 @@ pub fn write_article_to_file(base_dir: &str, article: &Article) -> Result<(), We
 
 pub async fn get_article(a_link: &str) -> Option<Article> {
     let html = get_webpage(a_link).await.unwrap_or("".to_owned());
-    parse_article(&html)
+    parse_article(&html,a_link)
 }
